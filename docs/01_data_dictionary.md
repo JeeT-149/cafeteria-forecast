@@ -7,7 +7,7 @@ The dataset for this analysis originates from a phpMyAdmin SQL dump containing c
 * **Generation Time:** April 28, 2025
 * **Main Dump Original Size:** 11,034,801,932 bytes
 
-Additionally, a separate `users.sql` dump file exists (Original Size: 13,517,179 bytes). The schema for the `users` table is not yet documented and no assumptions should be made regarding its column structure.
+Additionally, a separate `users.sql` dump file exists (Original Size: 13,517,179 bytes). The schema for the `users` table is not yet documented.
 
 ## 2. Source Files
 * `data/Cafeteria Order Data.sql`
@@ -24,7 +24,6 @@ The following relevant tables were extracted from the large SQL dump for this an
 * `order_details`
 
 ## 4. Verified Row Counts
-After successfully loading the extracted data, the following row counts were verified:
 * `branches`: 18
 * `counters`: 147
 * `dishes`: 11,622
@@ -38,19 +37,19 @@ After successfully loading the extracted data, the following row counts were ver
 ### orders column dictionary
 | Column | Data Type | Nullable | Comment / Description |
 | :--- | :--- | :--- | :--- |
-| `id` | bigint unsigned | NOT NULL | Primary identifier for the order record. |
-| `order_number` | varchar(255) | NOT NULL | Order reference number. |
+| `id` | bigint unsigned | NOT NULL | Primary identifier for the order record. Uniqueness verified. |
+| `order_number` | varchar(255) | NOT NULL | Order reference number. Not unique across the table (reuses observed). |
 | `user_id` | int | NOT NULL | Identifier for the user. |
-| `order_status` | int | NOT NULL | Order status (default '0'). Semantics to be confirmed from application context. |
+| `order_status` | int | NOT NULL | Order status (default '0'). Meaning to be confirmed from application/business context. |
 | `status_update_time` | timestamp | NULL | Time of status update. |
-| `cd_status` | int | NOT NULL | Default '0'. Semantics to be confirmed from application context. |
-| `order_date` | timestamp | NULL | Date and time of the order. |
+| `cd_status` | int | NOT NULL | Default '0'. Meaning to be confirmed from application/business context. |
+| `order_date` | timestamp | NULL | Date and time of the order. Used as the operational timestamp. |
 | `device_no` | varchar(255) | NULL | Device number. |
 | `branch_id` | int | NOT NULL | Identifier for the branch. |
 | `branch_merchant_code` | varchar(255) | NULL | Merchant code associated with the branch. |
 | `counter_id` | int | NULL | Identifier for the counter. |
 | `category_id` | int | NULL | Identifier for the category. |
-| `order_through` | varchar(255) | NULL | Channel through which the order was placed (e.g., mobile app, pos). |
+| `order_through` | varchar(255) | NULL | Channel through which the order was placed. |
 | `sub_total` | double(9,2) | NOT NULL | Sub-total amount. |
 | `tax_amount` | double(9,2) | NOT NULL | Tax amount. |
 | `tax_percent` | int | NOT NULL | Tax percentage applied. |
@@ -88,7 +87,7 @@ After successfully loading the extracted data, the following row counts were ver
 | `is_preorder` | int | NOT NULL | Pre-order flag indicator (default '0'). |
 | `preorder_time` | timestamp | NULL | Timestamp of the pre-order. |
 | `json_data` | longtext | NULL | Additional payload recorded as JSON data. |
-| `IST_timezone` | timestamp | NULL | Semantics to be confirmed from application context. |
+| `IST_timezone` | timestamp | NULL | Meaning to be confirmed from application/business context. |
 | `order_create_time` | timestamp | NULL | Timestamp indicating the creation time of the order. |
 | `created_at` | timestamp | NULL | Timestamp indicating the creation of the record. |
 | `updated_at` | timestamp | NULL | Timestamp indicating the last update of the record. |
@@ -110,7 +109,7 @@ After successfully loading the extracted data, the following row counts were ver
 | `dish_name` | varchar(255) | NOT NULL | Name of the dish. |
 | `order_quantity` | int | NOT NULL | Quantity of the dish ordered. |
 | `order_status` | int | NOT NULL | `0=Pending, 2=Chef Prepared, 1=Delivered` (default '0'). |
-| `cd_status` | int | NOT NULL | Default '0'. Semantics to be confirmed from application context. |
+| `cd_status` | int | NOT NULL | Default '0'. Meaning to be confirmed from application/business context. |
 | `prepared_timestamp` | timestamp | NULL | Timestamp indicating when the dish was prepared. |
 | `delivered_timestamp` | timestamp | NULL | Timestamp indicating when the dish was delivered. |
 | `dish_price` | double(9,2) | NOT NULL | Standard price of the dish. |
@@ -133,41 +132,18 @@ After successfully loading the extracted data, the following row counts were ver
 
 ## 7. Important Relationships
 * `order_details.order_id` → `orders.id`
-This referential relationship governs row-level integrity between the parent orders table and individual line items in the order details table. It is essential for executing integrity checks, such as identifying orphan records.
+This referential relationship governs row-level integrity between the parent orders table and individual line items in the order details table.
 
-## 8. Timestamp / Date Fields
-Initial exploration sampled 5 rows, projecting the `id`, `order_date`, `order_create_time`, `IST_timezone`, and `created_at` fields from `orders`. The following observations were made:
-* The `order_date` and `order_create_time` matched exactly in all five sampled rows.
-* The `IST_timezone` varied from the other timestamp fields in some rows.
-* The `created_at` field varied from `order_date` in some rows.
+## 8. Timestamp Fields
+`order_date` is used as the working operational timestamp based on agreement with `order_create_time` in the sampled rows; timezone semantics remain a documented assumption.
 
-*Important Caveat*: The sample alone does NOT definitively establish the business definition of the timestamp or provide proof that a timezone shift has occurred. The actual timezone semantics should be validated against the source application or business logic. For current forecasting models, `order_date` is utilized as the primary candidate because range boundaries were historically formed around it; however, this is an explicit working assumption pending further validation.
+## 9. Known Data-Quality Caveats
+* **Order Number Uniqueness:** The `order_number` column is NOT unique (402,806 distinct out of 5,961,005 rows). It is reused/recycled over time and branches.
+* **Orphan Records:** There are 1,397 `order_details` records that lack a matching `orders.id`, and 1,218 `orders` without detail items.
+* **Extreme Transactions / Repetitions:** Repeated invoice numbers (14,765) and business keys exist. High-value transactions (up to 788,361.00) exist and display large item counts rather than obvious single-row errors. 
+* **Zero-Value Orders:** 96,199 paid FY orders display a `grand_total <= 0`.
+* **Zero-Datetime Issues:** The dataset contains legacy zero-datetimes (e.g. `0000-00-00 00:00:00`) which were bypassed during database ingestion utilizing NO_ENGINE_SUBSTITUTION.
 
-## 9. Dataset Coverage
-A query measuring `order_date` bounds established the following dataset coverage:
-* **Minimum Date:** 2024-04-01 00:00:34
-* **Maximum Date:** 2025-04-01 17:11:47
-* **Missing Value Check:** `order_date` currently yields 0 NULL values within this verification.
-* **Coverage Scope:** There are no rows prior to April 1, 2024. A subset of 17,115 rows have an `order_date >= 2025-04-01`. 
-
-Consequently, the raw `orders` table encompasses records that slightly extend beyond the intended analysis window (April 1, 2024–March 31, 2025 financial year). Later analytics queries should leverage an explicit half-open filter:
-```sql
-order_date >= '2024-04-01' AND order_date < '2025-04-01'
-```
-
-## 10. Known Schema and Data Caveats
-The following schema intricacies have been recorded and require validation:
-* **Duplicate Investigations:** There are 402,806 distinct `order_number` values across the 5,961,005 rows, confirming that `order_number` is not strictly unique. Business logic investigations are needed before assuming this constitutes duplicate data.
-* **Branch Integrity:** There are 8 active `branch_id` codes. Branches 2 and 1 represent the heavy majority of order volumes. Some branches maintain short or late-starting coverage footprints. An anomalous `branch_id = -1` exists with a single recorded row, which must be addressed during the Python cleaning processes. Final branch selection for forecasting should account for continuous daily history and overall dataset completeness.
-* **Payment Nomenclature:** Descriptive statistics surrounding `mode_of_transaction` identify inconsistent capitalizations (e.g., "UPI", "Upi", "Card", "card"), blank values, and potentially anomalous literal values like "mode of transaction". These descriptive variations will be assessed during programmatic data cleaning.
-* **Order Status:** The overwhelming majority of orders carry an `order_status = 3`. Business meanings of values `1`, `3`, and `4` need formal validation via external documentation or application schemas.
-
-## 11. Indexes Added for Analysis
-To guarantee sufficient query performance and analytics reproducibility, the following B-Tree indexes were formally added to the extraction replica:
-
-* `orders`:
-  * `idx_order_date` (`order_date`)
-  * `idx_branch_date` (`branch_id`, `order_date`)
-  * `idx_counter` (`counter_id`)
-* `order_details`:
-  * `idx_order` (`order_id`)
+## 10. Indexes Relevant to Analysis
+* `orders`: `idx_order_date` (`order_date`), `idx_branch_date` (`branch_id`, `order_date`), `idx_counter` (`counter_id`)
+* `order_details`: `idx_order` (`order_id`)
