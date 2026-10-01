@@ -1,0 +1,8 @@
+,forecast_orders,lower_80,upper_80,model
+2025-04-01,8980.0,8666.0,9294.0,median_last_4_same_weekday
+2025-04-02,9056.0,8742.0,9370.0,median_last_4_same_weekday
+2025-04-03,8785.0,8472.0,9098.0,median_last_4_same_weekday
+2025-04-04,7412.0,7098.0,7726.0,median_last_4_same_weekday
+2025-04-05,958.0,644.0,1272.0,median_last_4_same_weekday
+2025-04-06,400.0,86.0,714.0,median_last_4_same_weekday
+2025-04-07,7851.0,7538.0,8164.0,median_last_4_same_weekday

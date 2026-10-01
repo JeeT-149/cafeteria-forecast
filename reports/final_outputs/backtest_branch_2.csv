@@ -1,0 +1,4 @@
+model,MAE,RMSE,WAPE_%,bias
+holt_winters,768.7,1196.8,11.9,6.9
+median_last_4_same_weekday,447.2,1120.9,6.9,-302.9
+seasonal_naive,607.1,1323.9,9.4,-156.9

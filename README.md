@@ -3,28 +3,87 @@
 An end-to-end data engineering, EDA, and forecasting pipeline for over 5.3 million cafeteria orders.
 
 ## Results at a Glance
-
 ![Executive Dashboard](reports/figures/00_executive_dashboard.png)
 
 ## What I Built
-
 - **SQL Extraction**: Streamed and isolated 7 critical tables out of an 11 GB MySQL dump.
-- **Cleaning**: Built an automated data cleaning funnel removing partial-year records and empty branches, filtering down to forecast-valid paid orders.
+- **Cleaning**: Built an automated data cleaning funnel filtering partial-year records and invalid/near-empty branch IDs, filtering down to forecast-valid paid orders.
 - **EDA**: Analyzed hourly patterns, branch distributions, payment methods, and non-positive total anomalies.
 - **Forecasting**: Evaluated multiple models via 8-fold rolling backtesting, selecting a robust baseline (median of last 4 same weekdays) for the next 7 days.
-- **Validation**: Programmatic verification of all report documentation against pipeline output.
+- **Validation**: Programmatic checks verify key report numbers against pipeline outputs.
 
 ## Key Findings
-
 - **Volume Concentration**: Branches 1 and 2 account for 80.1% of all valid orders.
-- **Peak Hours**: 51% of daily demand is concentrated in just 5 hours (13, 14, 16, 17, 18).
-- **Weekend Drop-off**: Weekends average only about 6.6% of weekday volume.
+- **Peak Hours**: 51% of demand is concentrated in just 5 hours (13, 14, 16, 17, 18).
+- **Weekend Drop-off**: Weekend days average only about 6.6% of weekday volume across branches 1 + 2.
 - **Digital Payments**: Digital modes dominate, with Paytm representing 39.6% of orders.
-- **Quality Anomalies**: 96,199 mobile-app orders flagged with zero or non-positive totals, mostly concentrated in Nov-Dec 2024.
+- **Quality Anomalies**: 96,199 paid orders were flagged with zero or non-positive totals; 96,169 of them were mobile-app orders, mostly concentrated in Nov–Dec 2024.
 
 ## Forecast
-
 ![Forecast Dashboard](reports/figures/10_forecast_dashboard.png)
+
+## Quick Review
+No dataset or Docker setup is required to review the final results.
+
+Start with:
+- Executive Dashboard
+- [report.md](report.md)
+- `docs/`
+
+## Full Reproduction with Docker
+
+The repository provides a reproducible Docker-based environment for rerunning the analysis from the original assignment SQL dump.
+
+### Prerequisites
+- Docker Desktop
+- Git
+- the assignment-provided SQL dump
+- PowerShell on Windows
+
+### Step 1
+Clone the repository:
+```powershell
+git clone <repository-url>
+cd cafeteria-forecast
+```
+
+### Step 2
+The original 11 GB SQL dump is not stored in this repository. For full reproduction, obtain the assignment-provided "Cafeteria Order Data.sql" file and place it at:
+`data/Cafeteria Order Data.sql`
+
+### Step 3
+Start the reproduction pipeline using the created script.
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/reproduce.ps1
+```
+
+### Step 4
+The pipeline generates:
+- `data/processed/`
+- `reports/figures/`
+- `reports/eda_facts.json`
+and validates the results.
+
+## Optional Forecast API
+
+The repository includes a lightweight FastAPI endpoint that serves precomputed 7-day forecasts from the tracked final outputs without importing the full database.
+
+Run:
+```powershell
+pip install fastapi uvicorn
+uvicorn src.api:app --reload
+```
+
+Then visit:
+`http://127.0.0.1:8000/docs`
+
+Endpoints:
+```text
+GET /health
+GET /forecast?branch=1
+GET /forecast?branch=2
+```
+These return the precomputed final 7-day forecasts.
 
 ## Repository Structure
 
@@ -32,34 +91,12 @@ An end-to-end data engineering, EDA, and forecasting pipeline for over 5.3 milli
 |---|---|
 | `docs/` | Detailed documentation on assumptions, cleaning logs, and methodology |
 | `reports/` | Output dashboards, charts, and facts json |
+| `reports/final_outputs/` | Lightweight, non-sensitive final artifacts required for review/API demonstration |
 | `src/` | Data extraction, cleaning pipeline, EDA, and forecasting scripts |
-| `data/processed/` | Processed result datasets |
+| `data/processed/` | Locally generated analysis outputs (ignored from Git) |
 | `report.md` | Full analytical report |
 
-## Reproduce
-
-The raw dump is not in the repo (11 GB). Place `Cafeteria Order Data.sql` in `data/`.
-```powershell
-python -m venv .venv; .venv\Scripts\activate
-pip install -r requirements.txt
-python src/extract_tables.py            # -> data/interim/tables/*.sql
-python src/fix_sql_terminators.py
-docker run --name cafe-db -e MYSQL_ROOT_PASSWORD=pass -e MYSQL_DATABASE=cafe -p 3306:3306 `
-  -v "${PWD}/data/interim/tables:/tables" -d mysql:8 --sql-mode="NO_ENGINE_SUBSTITUTION" `
-  --innodb-buffer-pool-size=2G --innodb-flush-log-at-trx-commit=2 --max_allowed_packet=1G --skip-log-bin
-foreach ($t in "branches","counters","dishes","categories","order_has_statuses","orders","order_details") {
-  docker exec cafe-db sh -c "mysql -uroot -ppass cafe < /tables/$t.sql" }
-# then add indexes: orders(order_date), orders(branch_id, order_date), orders(counter_id), order_details(order_id)
-python src/clean.py
-python src/top_items.py
-python src/eda.py
-python src/forecast_extra.py 2 1
-python src/audit_docs.py
-```
-Database credentials are local-only defaults for a throwaway container. The analysis re-runs from `data/processed/` CSVs without the database.
-
 ## Documentation
-
 - [report.md](report.md)
 - [docs/README.md](docs/README.md)
 - [docs/assumptions.md](docs/assumptions.md)
@@ -68,5 +105,4 @@ Database credentials are local-only defaults for a throwaway container. The anal
 - [docs/05_model_evaluation.md](docs/05_model_evaluation.md)
 
 ## Privacy
-
 `users.sql` contains personal data (emails, password hashes, OTPs). It was not analysed and is not committed.
