@@ -1,29 +1,17 @@
 # Data Dictionary & Dataset Overview
 
-## 1. Dataset Overview
-The dataset for this analysis originates from a phpMyAdmin SQL dump containing cafeteria order data.
-* **Database:** `foodiisoftv3-fy-24-25`
-* **MySQL Server Version:** 8.0.32
-* **Generation Time:** April 28, 2025
-* **Main Dump Original Size:** 11,034,801,932 bytes
+## Dataset overview
 
-Additionally, a separate `users.sql` dump file exists (Original Size: 13,517,179 bytes). The schema for the `users` table is not yet documented.
+Source:
+`foodiisoftv3-fy-24-25`
 
-## 2. Source Files
-* `data/Cafeteria Order Data.sql`
-* `data/users.sql`
+Main SQL dump:
+`data/Cafeteria Order Data.sql`
 
-## 3. Tables Used
-The following relevant tables were extracted from the large SQL dump for this analysis:
-* `branches`
-* `counters`
-* `dishes`
-* `categories`
-* `order_has_statuses`
-* `orders`
-* `order_details`
+Separate users dump:
+`data/users.sql`
 
-## 4. Verified Row Counts
+Verified row counts:
 * `branches`: 18
 * `counters`: 147
 * `dishes`: 11,622
@@ -32,18 +20,17 @@ The following relevant tables were extracted from the large SQL dump for this an
 * `orders`: 5,961,005
 * `order_details`: 7,426,133
 
-## 5. orders Table
+## `orders` schema
 
-### orders column dictionary
 | Column | Data Type | Nullable | Comment / Description |
 | :--- | :--- | :--- | :--- |
 | `id` | bigint unsigned | NOT NULL | Primary identifier for the order record. Uniqueness verified. |
-| `order_number` | varchar(255) | NOT NULL | Order reference number. Not unique across the table (reuses observed). |
+| `order_number` | varchar(255) | NOT NULL | Order reference number. |
 | `user_id` | int | NOT NULL | Identifier for the user. |
 | `order_status` | int | NOT NULL | Order status (default '0'). Meaning to be confirmed from application/business context. |
 | `status_update_time` | timestamp | NULL | Time of status update. |
 | `cd_status` | int | NOT NULL | Default '0'. Meaning to be confirmed from application/business context. |
-| `order_date` | timestamp | NULL | Date and time of the order. Used as the operational timestamp. |
+| `order_date` | timestamp | NULL | Date and time of the order. |
 | `device_no` | varchar(255) | NULL | Device number. |
 | `branch_id` | int | NOT NULL | Identifier for the branch. |
 | `branch_merchant_code` | varchar(255) | NULL | Merchant code associated with the branch. |
@@ -67,7 +54,7 @@ The following relevant tables were extracted from the large SQL dump for this an
 | `order_cancel_at` | timestamp | NULL | Timestamp indicating when the order was cancelled. |
 | `grand_total` | double(9,2) | NOT NULL | Grand total amount. |
 | `invoice_number` | varchar(255) | NULL | Invoice reference number. |
-| `paid_or_cancel` | varchar(255) | NULL | Payment or cancellation status (e.g., paid, cancel, pending). |
+| `paid_or_cancel` | varchar(255) | NULL | Payment or cancellation status. |
 | `refund_through` | varchar(255) | NULL | Channel utilized for order refund. |
 | `instruction` | varchar(255) | NULL | Special instructions provided for the order. |
 | `transaction_id` | varchar(255) | NULL | Transaction identifier. |
@@ -92,9 +79,8 @@ The following relevant tables were extracted from the large SQL dump for this an
 | `created_at` | timestamp | NULL | Timestamp indicating the creation of the record. |
 | `updated_at` | timestamp | NULL | Timestamp indicating the last update of the record. |
 
-## 6. order_details Table
+## `order_details` schema
 
-### order_details column dictionary
 | Column | Data Type | Nullable | Comment / Description |
 | :--- | :--- | :--- | :--- |
 | `id` | bigint unsigned | NOT NULL | Primary identifier for the order detail record. |
@@ -108,8 +94,8 @@ The following relevant tables were extracted from the large SQL dump for this an
 | `addons_price` | double(9,2) | NULL | Price of add-ons. |
 | `dish_name` | varchar(255) | NOT NULL | Name of the dish. |
 | `order_quantity` | int | NOT NULL | Quantity of the dish ordered. |
-| `order_status` | int | NOT NULL | `0=Pending, 2=Chef Prepared, 1=Delivered` (default '0'). |
-| `cd_status` | int | NOT NULL | Default '0'. Meaning to be confirmed from application/business context. |
+| `order_status` | int | NOT NULL | `0 = Pending, 2 = Chef Prepared, 1 = Delivered` |
+| `cd_status` | int | NOT NULL | Meaning to be confirmed from application/business context. |
 | `prepared_timestamp` | timestamp | NULL | Timestamp indicating when the dish was prepared. |
 | `delivered_timestamp` | timestamp | NULL | Timestamp indicating when the dish was delivered. |
 | `dish_price` | double(9,2) | NOT NULL | Standard price of the dish. |
@@ -130,20 +116,12 @@ The following relevant tables were extracted from the large SQL dump for this an
 | `created_at` | timestamp | NULL | Timestamp indicating the creation of the record. |
 | `updated_at` | timestamp | NULL | Timestamp indicating the last update of the record. |
 
-## 7. Important Relationships
-* `order_details.order_id` → `orders.id`
-This referential relationship governs row-level integrity between the parent orders table and individual line items in the order details table.
-
-## 8. Timestamp Fields
-`order_date` is used as the working operational timestamp based on agreement with `order_create_time` in the sampled rows; timezone semantics remain a documented assumption.
-
-## 9. Known Data-Quality Caveats
-* **Order Number Uniqueness:** The `order_number` column is NOT unique (402,806 distinct out of 5,961,005 rows). It is reused/recycled over time and branches.
-* **Orphan Records:** There are 1,397 `order_details` records that lack a matching `orders.id`, and 1,218 `orders` without detail items.
-* **Extreme Transactions / Repetitions:** Repeated invoice numbers (14,765) and business keys exist. High-value transactions (up to 788,361.00) exist and display large item counts rather than obvious single-row errors. 
-* **Zero-Value Orders:** 96,199 paid FY orders display a `grand_total <= 0`.
-* **Zero-Datetime Issues:** The dataset contains legacy zero-datetimes (e.g. `0000-00-00 00:00:00`) which were bypassed during database ingestion utilizing NO_ENGINE_SUBSTITUTION.
-
-## 10. Indexes Relevant to Analysis
-* `orders`: `idx_order_date` (`order_date`), `idx_branch_date` (`branch_id`, `order_date`), `idx_counter` (`counter_id`)
-* `order_details`: `idx_order` (`order_id`)
+## Derived Fields (`orders_fy`)
+* `order_day`
+* `order_hour`
+* `dow`
+* `flag_excluded_branch`
+* `flag_nonpositive_total`
+* `flag_repeat_invoice`
+* `flag_repeat_bizkey`
+* `flag_bulk_order`

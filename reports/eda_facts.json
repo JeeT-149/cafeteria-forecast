@@ -1,0 +1,29 @@
+{
+  "top2_branch_share_orders": 0.801,
+  "top5_hours": [
+    13,
+    14,
+    16,
+    17,
+    18
+  ],
+  "top5_hours_share": 0.51,
+  "weekend_vs_weekday_ratio_b1b2": 0.066,
+  "zero_total_peak_month": "2024-12",
+  "nonpaid_rate_pct": {
+    "10": 19.6,
+    "1": 9.3,
+    "2": 9.3,
+    "9": 8.3
+  },
+  "payment_mix_pct": {
+    "unknown": 0.0,
+    "card": 4.4,
+    "qr": 7.2,
+    "cash": 8.3,
+    "cca": 8.4,
+    "razorpay": 9.3,
+    "upi": 22.7,
+    "paytm": 39.6
+  }
+}

@@ -1,77 +1,108 @@
 # Cleaning Log
 
-Source: MySQL dump `foodiisoftv3-fy-24-25` (~11 GB).
-Tables used for the current analysis: 7.
-Analysis window: `2024-04-01 <= order_date < 2025-04-01`.
-
 ## Row Funnel
 
-| # | Issue / Filter | How found | Decision | Rows |
-| - | ----- | --------- | -------- | ---: |
-| 1 | Raw orders | Initial database load | Starting population | 5,961,005 |
-| 2 | Outside FY window | `order_date` filter | Excluded from FY analysis | -17,115 |
-| 3 | FY orders | After filtering | Retained | 5,943,890 |
-| 4 | Excluded branches | `branch_id` in (-1, 3, 11) | Excluded | -438 |
-| 5 | Not paid | `paid_or_cancel != 'paid'` | Excluded from sales analysis | -508,357 |
-| 6 | Clean paid sales | After branch & paid filters | Main analysis population | 5,435,095 |
-| 7 | Zero/negative paid totals | `grand_total <= 0` | Retained but flagged | (96,199) |
+| Population                                    |          Rows |
+| --------------------------------------------- | ------------: |
+| Raw rows in `orders`                          |     5,961,005 |
+| Outside FY window                             |       -17,115 |
+| FY orders                                     |     5,943,890 |
+| Excluded branches (-1: 1, 3: 429, 11: 8)      |          -438 |
+| Not paid (cancel / pending / rejected / NULL) |      -508,357 |
+| **Clean paid sales orders**                   | **5,435,095** |
+| Flagged: total <= 0                           |       -96,199 |
+| **Forecast-valid paid orders**                | **5,338,896** |
 
-## Cleaning / Validation Decisions
+Note: Flagged rows are not automatically deleted from staging data.
 
-### 1. Zero-datetime compatibility (Fixed during ingestion)
-During initial import, MySQL rejected legacy zero-datetime values (e.g., `0000-00-00 00:00:00`) in `dishes.created_at` and `orders.preorder_time`.
-**Decision:** The MySQL container was recreated using `NO_ENGINE_SUBSTITUTION` (verified via `SELECT @@sql_mode;`). This was an ingestion compatibility fix; these records were allowed through ingestion and remain a data-quality consideration for later Python-level validation/normalization. They have not been cleaned out.
+## Ingestion Fixes
 
-### 2. Missing semicolon in extracted `order_has_statuses.sql` (Fixed during ingestion)
-The extracted file originally ended with `...)COMMIT;` causing a MySQL syntax error near `COMMIT`.
-**Decision:** Corrected to `...); COMMIT;` in the file. This was an extraction/formatting issue rather than corrupt business data.
+### Zero datetime
+Legacy values such as:
+`0000-00-00 00:00:00`
+caused MySQL import errors. The container was loaded using `NO_ENGINE_SUBSTITUTION`. This was an ingestion compatibility fix.
 
-### 3. Excluded Branches (Excluded by analysis rule)
-Branches `-1`, `3`, and `11` accounted for 438 FY orders.
-**Decision:** Excluded from the main branch-level analysis because of invalid/sentinel ID (`-1`) or insufficient volume for reliable branch-level analysis (`3`, `11`).
-Branches 9 (started Aug 28, 2024) and 10 (started Dec 26, 2024) are retained but should be compared over their active periods rather than interpreted as full-year branches. Branch 2 is the current planned forecasting branch due to its high volume and full-year history.
+### Missing semicolon
+`order_has_statuses.sql` originally ended with `...)COMMIT;` and was corrected to `...); COMMIT;` before successful loading.
 
-### 4. Status / Sales Rule
-The sales analysis currently isolates `paid_or_cancel = 'paid'`, yielding 5,435,095 FY paid orders after branch exclusions. Non-paid records (cancel: 401,076; pending: 108,325; rejected: 138) are separated for non-paid analysis. Numeric `order_status` values will not be given undocumented meanings.
+## Duplicate / invoice documentation
+Verified:
+* `orders` rows = 5,961,005
+* distinct ids = 5,961,005
+* duplicate ids = 0
 
-## Data Integrity Findings
+`order_number` is recycled and is not the unique key.
 
-### 1. Duplicate / Identifier Validation (Found but not yet fixed)
-Total orders and distinct `orders.id` values are exactly 5,961,005. No duplicate `orders.id` values were detected.
-However, there are only 402,806 distinct `order_number` values across all rows. Examples like `M2251` appear 370 times over a year and across 4 branches. This suggests `order_number` is reused/recycled and should not be used as the unique row key.
+Verified whole-table invoice repetition:
+* 14,765 repeated invoice numbers
+* 17,219 extra occurrences
 
-### 2. Invoice / Business-Key Repetition (Found but not yet fixed)
-Profiling revealed 14,765 repeated invoice numbers (17,219 extra occurrences) and 2,354 repeated business keys (`branch_id + order_number + order_date + grand_total`).
-**Decision:** Recorded as data-integrity findings requiring business-context investigation. They are not automatically treated as duplicate orders, and no rows were deleted. `id` remains the row-level unique identifier for the current analysis.
+FY classification:
+* 12,209 invoice groups / 14,461 extra rows: same branch + same total + within 5 minutes
+* 2,389 invoice groups / 2,559 extra rows: same branch + different totals
+* 110 invoice groups / 142 extra rows: same branch + same total + later
+* 56 invoice groups / 56 extra rows: different branches
 
-### 3. Order / Order-Detail Integrity (Found but not yet fixed)
-A `LEFT JOIN` identified 1,397 orphan `order_details` records and 1,218 `orders` without details.
-**Decision:** These records are preserved and flagged. They have not been deleted, pending an understanding of their business cause.
+Paid-only check:
+* groups with 2+ paid rows = 1,538
+* extra paid rows = 3,336
 
-## Money / Revenue Validation
+The current paid/non-excluded `orders_fy` flag count is 12,848 with `flag_repeat_invoice = 1`.
+These are flagged and retained as possible retry/re-submission patterns and potential double-counting exposure. They are not confirmed duplicates and are not automatically deleted.
 
-### 1. Zero / Negative Paid Totals
-There are 96,199 paid FY orders with `grand_total <= 0` (mobile app = 96,169; sok = 25; pos = 5). Investigation showed 96,165 have a subtotal, but 0 got money.
-**Decision:** Retained intentionally for order-count analysis/forecasting, but flagged. Exclude `grand_total <= 0` from revenue/average-ticket metrics. The evidence does not prove they are test or complimentary orders, so they are not deleted.
+## Business-key repetition
+Business key: `branch_id + order_number + order_date + grand_total`
+Verified whole-table profiling: 2,354 repeated keys, 2,589 extra occurrences.
+Current FY paid rows carrying the flag: 4,084.
+These are flagged and retained, not automatically deleted.
 
-### 2. Extreme Transaction Investigation
-The maximum observed `grand_total` is 788,361.00. Top transactions showed substantial item quantities (e.g., 640 items for the max total, 443 items for 274,217.00) across very few detail rows.
-**Decision:** High-value transactions were investigated and showed substantial item quantities, so they were retained pending business-context validation. They are not capped or deleted as obvious errors, but recorded as requiring contextual interpretation.
+## Non-positive totals
+Verified: 96,199 paid FY orders have `grand_total <= 0`.
+The zero-total investigation found:
+* 96,169 mobile-app non-positive orders
+* 96,169 had no `transaction_id`
+* 95,711 had reward_amount > 0
+* 95,709 had reward_points > 0
+* 230 rows reconciled with the tested subtotal/tax/discount/reward equation
+* 34 had zero subtotal
+* 0 showed positive received_amount
 
-## Timestamp Assumption
+Decision: retain in `orders_fy`, flag, exclude from the main forecast target, exclude from revenue/average-ticket calculations where appropriate. Do not label them as fraud/test/complimentary without further evidence.
 
-The current working operational timestamp is `order_date`. A five-row sample showed `order_date` matches `order_create_time` exactly, while `IST_timezone` and `created_at` differed in some rows. The source dump specified `SET time_zone="+00:00";`.
-**Decision:** `order_date` is used as the working operational timestamp based on agreement with `order_create_time` in the sampled rows; timezone semantics remain a documented assumption. It is not mathematically proven that there was no timezone conversion, nor is `IST_timezone` definitively incorrect. Timestamp semantics may require application-level confirmation.
+Final forecast-valid population: 5,338,896.
 
-## Remaining Issues
+## Bulk orders
+Verified maximum `grand_total` = 788,361.00.
+Threshold counts:
+* \> 1,000: 902
+* \> 10,000: 67
+* \> 100,000: 13
 
-* 17,115 records outside the FY window (retained in raw data, excluded from FY analytics).
-* 1,397 detached `order_details` orphan records.
-* 1,218 `orders` missing transactional detail records.
-* Non-unique `order_number` and repeated business keys.
-* Casing behaviors and blank fields within `mode_of_transaction`.
+The high-value transactions were checked against `order_details` and had substantial item quantities.
+Therefore, 67 paid FY orders with `grand_total > 10,000` are flagged as bulk orders (`flag_bulk_order = 1`). They are retained in the order-count target. Bulk revenue is shown separately where useful.
 
-## Assumptions
-* `order_date` accurately represents the operational timestamp for forecasting range boundaries.
-* The application business logic surrounding `cd_status` and numeric `order_status` remains unverified.
-* `id` is the solitary unique row-level identifier.
+## Referential integrity
+Verified:
+* `orders` = 5,961,005
+* `order_details` = 7,426,133
+* distinct `order_ids` in details = 5,960,826
+* orphan detail rows = 1,397
+* `orders` without detail rows = 1,218
+
+These are integrity findings. Do not delete them automatically.
+
+## Timestamp
+Current working timestamp is `order_date` because it matched `order_create_time` in the sampled rows.
+* `IST_timezone` differs in some samples
+* `created_at` differs in some samples
+* timezone semantics are still a working assumption
+
+## Branch decisions
+* branch -1 = 1 FY row
+* branch 3 = 429 FY rows
+* branch 11 = 8 FY rows
+* total = 438
+
+These are excluded from the main branch-level analysis because of invalid/sentinel ID or insufficient volume.
+Branches 9 and 10 have partial-year histories.
+Branch 2 is the planned headline forecast branch because it has high volume and a complete FY history.
