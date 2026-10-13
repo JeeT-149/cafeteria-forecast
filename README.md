@@ -97,6 +97,7 @@ These return the precomputed final 7-day forecasts.
 | `report.md` | Full analytical report |
 
 ## Documentation
+- [PROJECT_WALKTHROUGH.md](PROJECT_WALKTHROUGH.md) (Full Architecture & Engineering Walkthrough)
 - [report.md](report.md)
 - [docs/README.md](docs/README.md)
 - [docs/assumptions.md](docs/assumptions.md)
